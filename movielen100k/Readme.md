@@ -37,10 +37,10 @@ You can run the experiments using the **command-line interface**:
 
 ```python
 # Full experimental evaluation with 50 users
-python movielens_experiment.py --mode full --users 50
+python movielens_eval.py --mode full --users 50
 
 # Progressive scaling analysis
-python movielens_experiment.py --mode scaling --users 50 --topk 10
+python movielens_eval.py --mode scaling --users 50 --topk 10
 
 # Memory strategy comparison
-python movielens_experiment.py --mode memory --users 30
+python movielens_eval.py --mode memory --users 30
