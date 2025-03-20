@@ -1,43 +1,59 @@
 import numpy as np
 import pandas as pd
+import os
 import faiss
 from typing import Dict, List, Optional, Tuple, Set
 from datetime import datetime, timedelta
 import math
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
-
+import time
+import random
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+from google.api_core.exceptions import ResourceExhausted
 from pydantic import BaseModel, Field
 from langchain.docstore import InMemoryDocstore
 from langchain.retrievers import TimeWeightedVectorStoreRetriever
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain_experimental.generative_agents import (
     GenerativeAgent,
     GenerativeAgentMemory,
 )
 from langchain.callbacks.base import Callbacks 
-
+from langchain_community.chat_models import ChatOllama
 # Base memory structure (as provided in the notebook)
 class MemoryItem(BaseModel):
     content: str
     created_at: datetime
     importance: Optional[float] = 0.0
-
+os.environ["GOOGLE_API_KEY"] = "AIzaSyAgppWUfweq78A40VUyG3NhYf0zlDysTr8"
 
 class BaseCache(BaseModel):
     memories: Dict[str, MemoryItem] = Field(default_factory=dict)
 # Initialize the LLM with Google Generative AI
-LLM = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash-001",
-    temperature=0,
-    max_tokens=None,
-    timeout=None,
-    max_retries=2,
+# LLM = ChatGoogleGenerativeAI(
+#     model="gemini-2.0-flash-001",
+#     temperature=0,
+#     max_tokens=None,
+#     timeout=None,
+#     max_retries=2,
+# )
+LLM = ChatOllama(model="deepseek-r1:1.5b", max_tokens=None)  
+@retry(
+retry=retry_if_exception_type(ResourceExhausted),
+wait=wait_exponential(multiplier=1, min=2, max=60),
+stop=stop_after_attempt(5)
 )
-
+def make_api_call(function, *args, **kwargs):
+    """Wrapper for API calls with retry logic"""
+    # Optional small random delay to spread out requests
+    time.sleep(random.uniform(1, 4))
+    return function(*args, **kwargs)
 # Initialize embeddings
-embeddings_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+# embeddings_model = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+embeddings_model = OllamaEmbeddings(model="nomic-embed-text")
 def create_new_memory_retriever():
     """Create a new vector store retriever unique to the agent."""
     # Initialize the vectorstore as empty
@@ -94,8 +110,7 @@ class HallAgent4Rec:
         """
         Initialize the HallAgent4Rec system.
         
-        Args:
-            num_clusters: Number of clusters for item grouping
+        Args:7
             latent_dim: Dimensionality of user and item embeddings
             lambda_u: User regularization coefficient
             lambda_v: Item regularization coefficient
@@ -461,7 +476,7 @@ class HallAgent4Rec:
         This implements the full recommendation pipeline from the paper.
         """
         print(f"Generating recommendations for user {user_id}...")
-        
+
         # Step 1: Construct RAG query (eq. 12-13)
         query, query_embedding = self.construct_rag_query(user_id)
         
@@ -503,9 +518,10 @@ class HallAgent4Rec:
         """
         
         # Generate recommendations
-        response = LLM.invoke(prompt)
+        # response = LLM.invoke(prompt)        
+        response = make_api_call(LLM.invoke,prompt)
         recommendations_text = response.content
-        
+
         # Step 5: Detect hallucinations
         # Extract recommended items from response
         recommended_items = []
